@@ -361,7 +361,20 @@ describe('StripeFirestore', () => {
   });
 
   describe('legacyFetchAndInsertCustomer', () => {
+    const uid = customer1.metadata.userid;
+    const customerPath = `customers/${uid}`;
+    const subscriptionPath = (id: string) =>
+      `${customerPath}/subscriptions/${id}`;
     let tx: any;
+
+    function storedSnapshot(stripeEventCreatedTime?: number) {
+      return {
+        data: () =>
+          stripeEventCreatedTime === undefined
+            ? undefined
+            : { stripeEventCreatedTime },
+      };
+    }
 
     beforeEach(() => {
       stripe.subscriptions = {
@@ -371,11 +384,11 @@ describe('StripeFirestore', () => {
       };
 
       tx = {
-        get: jest.fn().mockResolvedValue({}),
+        get: jest.fn().mockResolvedValue(storedSnapshot()),
         getAll: jest
           .fn()
           .mockImplementation(async (...refs: any[]) =>
-            refs.map(() => ({ data: () => undefined }))
+            refs.map(() => storedSnapshot())
           ),
         set: jest.fn(),
       };
@@ -385,10 +398,12 @@ describe('StripeFirestore', () => {
         .mockImplementation((fn: any) => fn(tx));
 
       stripeFirestore.customerCollectionDbRef = {
-        doc: jest.fn().mockImplementation((uid: any) => ({
+        doc: jest.fn().mockImplementation((docUid: any) => ({
+          path: `customers/${docUid}`,
           collection: jest.fn().mockImplementation(() => ({
             doc: jest.fn().mockImplementation((id: any) => ({
               id,
+              path: `customers/${docUid}/subscriptions/${id}`,
             })),
           })),
         })),
@@ -423,6 +438,8 @@ describe('StripeFirestore', () => {
     });
 
     describe('when rewriting stored records', () => {
+      const newSubscription = { ...subscription1, id: 'sub_new' };
+
       beforeEach(() => {
         stripe.customers = {
           retrieve: jest
@@ -435,22 +452,43 @@ describe('StripeFirestore', () => {
         };
       });
 
-      it('keeps the stored stripeEventCreatedTime on the customer and subscriptions', async () => {
-        tx.getAll.mockResolvedValue([
-          { data: () => ({ stripeEventCreatedTime: 100 }) },
-          { data: () => ({ stripeEventCreatedTime: 200 }) },
-        ]);
+      it('keeps the stored stripeEventCreatedTime from the lock reads without reading again', async () => {
+        tx.get.mockImplementation(async (ref: any) =>
+          storedSnapshot(ref.path === customerPath ? 100 : 200)
+        );
 
         await stripeFirestore.legacyFetchAndInsertCustomer(customer.id);
 
+        expect(tx.get).toHaveBeenCalledTimes(2);
+        expect(tx.getAll).not.toHaveBeenCalled();
         expect(tx.set).toHaveBeenNthCalledWith(1, expect.anything(), {
           ...customer,
           stripeEventCreatedTime: 100,
         });
         expect(tx.set).toHaveBeenNthCalledWith(
           2,
-          { id: subscription1.id },
+          expect.objectContaining({ id: subscription1.id }),
           { ...subscription1, stripeEventCreatedTime: 200 }
+        );
+      });
+
+      it('reads only the docs the lock reads missed', async () => {
+        stripe.subscriptions.list = jest.fn().mockReturnValue({
+          autoPagingToArray: jest
+            .fn()
+            .mockResolvedValue([subscription1, newSubscription]),
+        });
+        tx.getAll.mockResolvedValue([storedSnapshot(300)]);
+
+        await stripeFirestore.legacyFetchAndInsertCustomer(customer.id);
+
+        expect(tx.getAll).toHaveBeenCalledTimes(1);
+        expect(tx.getAll).toHaveBeenCalledWith(
+          expect.objectContaining({ path: subscriptionPath('sub_new') })
+        );
+        expect(tx.set).toHaveBeenLastCalledWith(
+          expect.objectContaining({ id: 'sub_new' }),
+          { ...newSubscription, stripeEventCreatedTime: 300 }
         );
       });
 
@@ -460,7 +498,7 @@ describe('StripeFirestore', () => {
         expect(tx.set).toHaveBeenNthCalledWith(1, expect.anything(), customer);
         expect(tx.set).toHaveBeenNthCalledWith(
           2,
-          { id: subscription1.id },
+          expect.objectContaining({ id: subscription1.id }),
           subscription1
         );
       });

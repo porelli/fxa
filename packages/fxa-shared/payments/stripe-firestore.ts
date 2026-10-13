@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 import {
   CollectionReference,
+  DocumentReference,
   DocumentSnapshot,
   Firestore,
 } from '@google-cloud/firestore';
@@ -48,10 +49,10 @@ function toFirestoreObject<T>(doc: T): T {
 
 function withStoredEventTime<T extends object>(
   record: T,
-  stored: DocumentSnapshot
+  stored: DocumentSnapshot | undefined
 ): T & { stripeEventCreatedTime?: number } {
   const stripeEventCreatedTime: number | undefined =
-    stored.data()?.stripeEventCreatedTime;
+    stored?.data()?.stripeEventCreatedTime;
   return stripeEventCreatedTime
     ? { ...record, stripeEventCreatedTime }
     : record;
@@ -376,13 +377,21 @@ export class StripeFirestore {
       // If any other transaction runs that reads these documents overlapping with our read+write operation,
       // the transaction will fail and be retried. This ensures serialization of our updates, and no race condition
       // based on the speed at which the Stripe API responds.
-      await tx.get(this.customerCollectionDbRef.doc(customerWithSubscriptionsUid));
-      for (const subscription of customerWithSubscriptions.subscriptions?.data || []) {
-        await tx.get(
-          this.customerCollectionDbRef.doc(customerWithSubscriptionsUid)
-            .collection(this.subscriptionCollection)
-            .doc(subscription.id),
-        );
+      const storedSnapshots = new Map<string, DocumentSnapshot>();
+      const lockedCustomerRef = this.customerCollectionDbRef.doc(
+        customerWithSubscriptionsUid
+      );
+      const lockedRefs: DocumentReference[] = [
+        lockedCustomerRef,
+        ...(customerWithSubscriptions.subscriptions?.data || []).map(
+          (subscription) =>
+            lockedCustomerRef
+              .collection(this.subscriptionCollection)
+              .doc(subscription.id)
+        ),
+      ];
+      for (const ref of lockedRefs) {
+        storedSnapshots.set(ref.path, await tx.get(ref));
       }
 
       const [customer, subscriptions] = await Promise.all([
@@ -446,15 +455,22 @@ export class StripeFirestore {
       const subscriptionRefs = (subscriptions ?? []).map((subscription) =>
         customerRef.collection(this.subscriptionCollection).doc(subscription.id)
       );
-      // Keep the stored event time so a delayed older webhook can't overwrite this fresher data.
-      const [storedCustomer, ...storedSubscriptions] = await tx.getAll(
-        customerRef,
-        ...subscriptionRefs
+      const unreadRefs = [customerRef, ...subscriptionRefs].filter(
+        (ref) => !storedSnapshots.has(ref.path)
       );
+      if (unreadRefs.length > 0) {
+        const unreadSnapshots = await tx.getAll(...unreadRefs);
+        unreadRefs.forEach((ref, i) =>
+          storedSnapshots.set(ref.path, unreadSnapshots[i])
+        );
+      }
 
+      // Keep the stored event time so a delayed older webhook can't overwrite this fresher data.
       tx.set(
         customerRef,
-        toFirestoreObject(withStoredEventTime(customer, storedCustomer))
+        toFirestoreObject(
+          withStoredEventTime(customer, storedSnapshots.get(customerRef.path))
+        )
       );
       if (subscriptions) {
         // DS: Does this update the subscriptions for the customer's collection and also the customer object?
@@ -462,7 +478,10 @@ export class StripeFirestore {
           tx.set(
             subscriptionRefs[i],
             toFirestoreObject(
-              withStoredEventTime(subscription, storedSubscriptions[i])
+              withStoredEventTime(
+                subscription,
+                storedSnapshots.get(subscriptionRefs[i].path)
+              )
             )
           );
         });
