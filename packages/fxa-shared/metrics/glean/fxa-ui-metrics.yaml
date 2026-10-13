@@ -563,15 +563,21 @@ email:
     extra_keys:
       reason:
         description: |
-          Categorized WebAuthn or sign-in error: 'not_allowed' (user
-          dismissed the browser prompt, no credential on device, or biometric
-          failed), 'not_supported' (device/browser lacks WebAuthn support),
-          'security' (non-HTTPS or cross-origin restriction), 'timeout'
-          (ceremony timed out), 'no_passkey_found' (server pre-ceremony
-          check found no matching credential), 'throttled' (errno 114),
-          'request_blocked' (errno 125), 'authentication_failed' (errno 227),
-          'challenge_expired' (errno 238), or 'unexpected' (any other error,
-          including server failures).
+          WebAuthn or sign-in error. One value for each WebAuthn error name:
+          'not_allowed' (NotAllowedError: user dismissed the browser prompt,
+          no credential on device, or biometric failed), 'abort'
+          (AbortError), 'timeout' (TimeoutError), 'not_supported'
+          (NotSupportedError, or the browser lacks WebAuthn support),
+          'security' (SecurityError: non-HTTPS or cross-origin restriction),
+          'invalid_state' (InvalidStateError), 'not_readable'
+          (NotReadableError), 'type_error' (TypeError), 'constraint'
+          (ConstraintError), 'data' (DataError), 'encoding' (EncodingError),
+          'operation' (OperationError), 'unknown' (UnknownError). Other
+          values: 'no_passkey_found' (the server found no matching
+          credential), 'throttled' (errno 114), 'request_blocked' (errno
+          125), 'authentication_failed' (errno 227), 'challenge_expired'
+          (errno 238), or 'unexpected' (an unrecognized error, including
+          server failures).
         type: string
   first_passkey_submit_success:
     type: event
@@ -1198,10 +1204,11 @@ login:
     extra_keys:
       reason:
         description: |
-          Categorized WebAuthn or sign-in error: 'not_allowed', 'not_supported',
-          'security', 'timeout', 'no_passkey_found', 'throttled',
-          'request_blocked', 'authentication_failed', 'challenge_expired', or
-          'unexpected'. See
+          WebAuthn or sign-in error: 'not_allowed', 'abort', 'timeout',
+          'not_supported', 'security', 'invalid_state', 'not_readable',
+          'type_error', 'constraint', 'data', 'encoding', 'operation',
+          'unknown', 'no_passkey_found', 'throttled', 'request_blocked',
+          'authentication_failed', 'challenge_expired', or 'unexpected'. See
           first_passkey_submit_frontend_error for full definitions.
         type: string
   passkey_submit_success:
@@ -1265,10 +1272,11 @@ login:
     extra_keys:
       reason:
         description: |
-          Categorized WebAuthn or sign-in error: 'not_allowed', 'not_supported',
-          'security', 'timeout', 'no_passkey_found', 'throttled',
-          'request_blocked', 'authentication_failed', 'challenge_expired', or
-          'unexpected'. See
+          WebAuthn or sign-in error: 'not_allowed', 'abort', 'timeout',
+          'not_supported', 'security', 'invalid_state', 'not_readable',
+          'type_error', 'constraint', 'data', 'encoding', 'operation',
+          'unknown', 'no_passkey_found', 'throttled', 'request_blocked',
+          'authentication_failed', 'challenge_expired', or 'unexpected'. See
           first_passkey_submit_frontend_error for full definitions.
         type: string
   alternative_auth_passkey_submit_success:
@@ -1331,10 +1339,11 @@ login:
     extra_keys:
       reason:
         description: |
-          Categorized WebAuthn or sign-in error: 'not_allowed', 'not_supported',
-          'security', 'timeout', 'no_passkey_found', 'throttled',
-          'request_blocked', 'authentication_failed', 'challenge_expired', or
-          'unexpected'. See
+          WebAuthn or sign-in error: 'not_allowed', 'abort', 'timeout',
+          'not_supported', 'security', 'invalid_state', 'not_readable',
+          'type_error', 'constraint', 'data', 'encoding', 'operation',
+          'unknown', 'no_passkey_found', 'throttled', 'request_blocked',
+          'authentication_failed', 'challenge_expired', or 'unexpected'. See
           first_passkey_submit_frontend_error for full definitions.
         type: string
   otp_passkey_submit_success:
@@ -3812,7 +3821,19 @@ account_pref:
       - interaction
     extra_keys:
       reason:
-        description: Error type - not_allowed, not_supported, security, timeout, webauthn_unknown, auth_error_{errno}, or server_error
+        description: |
+          Error type. WebAuthn errors use the same values as
+          first_passkey_submit_frontend_error ('not_allowed', 'abort',
+          'timeout', 'not_supported', 'security', 'invalid_state',
+          'not_readable', 'type_error', 'constraint', 'data', 'encoding',
+          'operation', 'unknown'), plus 'already_registered' (the ceremony
+          failed and the account already has passkeys, so the device is
+          probably registered) and 'unexpected' (an unrecognized WebAuthn
+          error). Server errors: 'invalid_token' (errno 110), 'throttled'
+          (errno 114), 'passkey_limit_reached' (errno 226),
+          'user_verification_required' (errno 233), 'auth_error_{errno}'
+          (another known auth server errno), or 'server_error' (any other
+          error).
         type: string
   passkey_create_success_view:
     type: event

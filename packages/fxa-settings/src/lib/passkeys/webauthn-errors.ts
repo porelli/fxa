@@ -37,16 +37,24 @@ export enum WebAuthnErrorType {
 }
 
 /**
- * Reason value reported in Glean `*_submit_frontend_error` events. The
- * taxonomy in FXA-13475 collapses the larger DOMException set to five
- * buckets, so error-shape changes inside the same bucket don't fragment
- * the metric.
+ * Reason value reported in Glean `*_submit_frontend_error` events. Each
+ * WebAuthn error name has its own value, so dashboards can break errors down.
  */
 export type WebAuthnGleanReason =
   | 'not_allowed'
+  | 'abort'
+  | 'timeout'
   | 'not_supported'
   | 'security'
-  | 'timeout'
+  | 'invalid_state'
+  | 'not_readable'
+  | 'type_error'
+  | 'constraint'
+  | 'data'
+  | 'encoding'
+  | 'operation'
+  | 'unknown'
+  | 'already_registered'
   | 'unexpected';
 
 /**
@@ -128,7 +136,7 @@ export const ERROR_MAP: Record<string, ErrorEntry> = {
     category: WebAuthnErrorCategory.UserAction,
     errorType: WebAuthnErrorType.Abort,
     logToSentry: false,
-    gleanReason: 'not_allowed',
+    gleanReason: 'abort',
     ftlId: {
       registration: 'passkey-registration-error-not-allowed',
       authentication: 'passkey-authentication-error-not-allowed',
@@ -187,7 +195,7 @@ export const ERROR_MAP: Record<string, ErrorEntry> = {
     category: WebAuthnErrorCategory.DevicePlatform,
     errorType: WebAuthnErrorType.InvalidState,
     logToSentry: false,
-    gleanReason: 'unexpected',
+    gleanReason: 'invalid_state',
     ftlId: {
       registration: 'passkey-registration-error-invalid-state',
       authentication: 'passkey-authentication-error-invalid-state',
@@ -203,7 +211,7 @@ export const ERROR_MAP: Record<string, ErrorEntry> = {
     category: WebAuthnErrorCategory.DevicePlatform,
     errorType: WebAuthnErrorType.NotReadable,
     logToSentry: false,
-    gleanReason: 'unexpected',
+    gleanReason: 'not_readable',
     ftlId: {
       registration: 'passkey-registration-error-not-readable',
       authentication: 'passkey-authentication-error-not-readable',
@@ -218,7 +226,7 @@ export const ERROR_MAP: Record<string, ErrorEntry> = {
     category: WebAuthnErrorCategory.Unexpected,
     errorType: WebAuthnErrorType.Type,
     logToSentry: true,
-    gleanReason: 'unexpected',
+    gleanReason: 'type_error',
     ftlId: UNEXPECTED_FTL_ID,
     fallbackText: UNEXPECTED_FALLBACK,
   },
@@ -226,7 +234,7 @@ export const ERROR_MAP: Record<string, ErrorEntry> = {
     category: WebAuthnErrorCategory.Unexpected,
     errorType: WebAuthnErrorType.Data,
     logToSentry: true,
-    gleanReason: 'unexpected',
+    gleanReason: 'data',
     ftlId: UNEXPECTED_FTL_ID,
     fallbackText: UNEXPECTED_FALLBACK,
   },
@@ -234,7 +242,7 @@ export const ERROR_MAP: Record<string, ErrorEntry> = {
     category: WebAuthnErrorCategory.Unexpected,
     errorType: WebAuthnErrorType.Encoding,
     logToSentry: true,
-    gleanReason: 'unexpected',
+    gleanReason: 'encoding',
     ftlId: UNEXPECTED_FTL_ID,
     fallbackText: UNEXPECTED_FALLBACK,
   },
@@ -242,7 +250,7 @@ export const ERROR_MAP: Record<string, ErrorEntry> = {
     category: WebAuthnErrorCategory.Unexpected,
     errorType: WebAuthnErrorType.Constraint,
     logToSentry: true,
-    gleanReason: 'unexpected',
+    gleanReason: 'constraint',
     ftlId: {
       registration: 'passkey-registration-error-constraint',
       authentication: 'passkey-authentication-error-unexpected',
@@ -256,7 +264,7 @@ export const ERROR_MAP: Record<string, ErrorEntry> = {
     category: WebAuthnErrorCategory.Unexpected,
     errorType: WebAuthnErrorType.Operation,
     logToSentry: true,
-    gleanReason: 'unexpected',
+    gleanReason: 'operation',
     ftlId: UNEXPECTED_FTL_ID,
     fallbackText: UNEXPECTED_FALLBACK,
   },
@@ -264,7 +272,7 @@ export const ERROR_MAP: Record<string, ErrorEntry> = {
     category: WebAuthnErrorCategory.Unexpected,
     errorType: WebAuthnErrorType.Unknown,
     logToSentry: true,
-    gleanReason: 'unexpected',
+    gleanReason: 'unknown',
     ftlId: UNEXPECTED_FTL_ID,
     fallbackText: UNEXPECTED_FALLBACK,
   },
@@ -272,7 +280,7 @@ export const ERROR_MAP: Record<string, ErrorEntry> = {
     category: WebAuthnErrorCategory.UserAction,
     errorType: WebAuthnErrorType.NotSupported,
     logToSentry: true,
-    gleanReason: 'not_supported',
+    gleanReason: 'already_registered',
     ftlId: AUTHENTICATOR_ALREADY_REGISTERED_FTL_ID,
     fallbackText: AUTHENTICATOR_ALREADY_REGISTERED_FALLBACK,
   },

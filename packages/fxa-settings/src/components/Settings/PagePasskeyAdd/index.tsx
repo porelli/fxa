@@ -5,6 +5,7 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 
 import * as Sentry from '@sentry/browser';
+import { ERRNO } from '@fxa/accounts/errors';
 
 import { SETTINGS_PATH } from '../../../constants';
 import { useNavigateWithQuery } from '../../../lib/hooks';
@@ -40,6 +41,13 @@ import {
   passkeyCouldNotCompleteMessage,
   unsupportedPasskeyMessage,
 } from '../../../lib/passkeys/unsupported-message';
+
+const AUTH_ERROR_GLEAN_REASONS: Record<number, string> = {
+  [ERRNO.INVALID_TOKEN]: 'invalid_token',
+  [ERRNO.THROTTLED]: 'throttled',
+  [ERRNO.PASSKEY_LIMIT_REACHED]: 'passkey_limit_reached',
+  [ERRNO.PASSKEY_USER_VERIFICATION_REQUIRED]: 'user_verification_required',
+};
 
 export const MfaGuardPagePasskeyAdd = () => {
   const alertBar = useAlertBar();
@@ -196,17 +204,8 @@ export const PagePasskeyAdd = () => {
             Sentry.captureException,
             { hadExcludeCredentials }
           );
-          const reasonMap: Record<string, string> = {
-            [WebAuthnErrorType.NotAllowed]: 'not_allowed',
-            [WebAuthnErrorType.Abort]: 'abort',
-            [WebAuthnErrorType.Timeout]: 'timeout',
-            [WebAuthnErrorType.NotSupported]: 'not_supported',
-            [WebAuthnErrorType.Security]: 'security',
-          };
           GleanMetrics.accountPref.passkeyCreateSubmitFrontendError({
-            event: {
-              reason: reasonMap[categorized.errorType] || 'webauthn_unknown',
-            },
+            event: { reason: categorized.gleanReason },
           });
           if (categorized.errorType === WebAuthnErrorType.NotSupported) {
             // NotSupportedError at this stage means the ceremony was refused
@@ -242,16 +241,15 @@ export const PagePasskeyAdd = () => {
         // password-manager extensions (e.g. Bitwarden)
         // throw on cancel instead of a DOMException — those bypass
         // the WebAuthn branch above.
-        const handledError = error as HandledError;
-        const isKnownAuthError = !!(
-          handledError?.errno && AuthUiErrorNos[handledError.errno]
-        );
+        const errno = (error as HandledError)?.errno;
+        const isKnownAuthError = !!(errno && AuthUiErrorNos[errno]);
 
         GleanMetrics.accountPref.passkeyCreateSubmitFrontendError({
           event: {
-            reason: isKnownAuthError
-              ? `auth_error_${handledError.errno}`
-              : 'server_error',
+            reason:
+              errno && isKnownAuthError
+                ? (AUTH_ERROR_GLEAN_REASONS[errno] ?? `auth_error_${errno}`)
+                : 'server_error',
           },
         });
 
