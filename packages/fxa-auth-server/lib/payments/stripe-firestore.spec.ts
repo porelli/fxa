@@ -372,6 +372,11 @@ describe('StripeFirestore', () => {
 
       tx = {
         get: jest.fn().mockResolvedValue({}),
+        getAll: jest
+          .fn()
+          .mockImplementation(async (...refs: any[]) =>
+            refs.map(() => ({ data: () => undefined }))
+          ),
         set: jest.fn(),
       };
 
@@ -415,6 +420,50 @@ describe('StripeFirestore', () => {
       });
       expect(tx.set).toHaveBeenCalledTimes(2); // customer + subscription
       expect(tx.get).toHaveBeenCalledTimes(2); // customer + subscription
+    });
+
+    describe('when rewriting stored records', () => {
+      beforeEach(() => {
+        stripe.customers = {
+          retrieve: jest
+            .fn()
+            .mockResolvedValueOnce({
+              ...customer,
+              subscriptions: { data: [subscription1] },
+            })
+            .mockResolvedValueOnce(customer),
+        };
+      });
+
+      it('keeps the stored stripeEventCreatedTime on the customer and subscriptions', async () => {
+        tx.getAll.mockResolvedValue([
+          { data: () => ({ stripeEventCreatedTime: 100 }) },
+          { data: () => ({ stripeEventCreatedTime: 200 }) },
+        ]);
+
+        await stripeFirestore.legacyFetchAndInsertCustomer(customer.id);
+
+        expect(tx.set).toHaveBeenNthCalledWith(1, expect.anything(), {
+          ...customer,
+          stripeEventCreatedTime: 100,
+        });
+        expect(tx.set).toHaveBeenNthCalledWith(
+          2,
+          { id: subscription1.id },
+          { ...subscription1, stripeEventCreatedTime: 200 }
+        );
+      });
+
+      it('writes the Stripe records as-is when no stripeEventCreatedTime is stored', async () => {
+        await stripeFirestore.legacyFetchAndInsertCustomer(customer.id);
+
+        expect(tx.set).toHaveBeenNthCalledWith(1, expect.anything(), customer);
+        expect(tx.set).toHaveBeenNthCalledWith(
+          2,
+          { id: subscription1.id },
+          subscription1
+        );
+      });
     });
 
     it('errors on customer deleted', async () => {

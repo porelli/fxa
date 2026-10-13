@@ -1,7 +1,11 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-import { CollectionReference, Firestore } from '@google-cloud/firestore';
+import {
+  CollectionReference,
+  DocumentSnapshot,
+  Firestore,
+} from '@google-cloud/firestore';
 import { StatsD } from 'hot-shots';
 import { ILogger } from '../log';
 import { ACTIVE_SUBSCRIPTION_STATUSES } from '../subscriptions/stripe';
@@ -40,6 +44,17 @@ export class FirestoreStripeErrorBuilder extends Error {
  */
 function toFirestoreObject<T>(doc: T): T {
   return JSON.parse(JSON.stringify(doc));
+}
+
+function withStoredEventTime<T extends object>(
+  record: T,
+  stored: DocumentSnapshot
+): T & { stripeEventCreatedTime?: number } {
+  const stripeEventCreatedTime: number | undefined =
+    stored.data()?.stripeEventCreatedTime;
+  return stripeEventCreatedTime
+    ? { ...record, stripeEventCreatedTime }
+    : record;
 }
 
 /**
@@ -427,21 +442,30 @@ export class StripeFirestore {
         );
       }
 
+      const customerRef = this.customerCollectionDbRef.doc(uid);
+      const subscriptionRefs = (subscriptions ?? []).map((subscription) =>
+        customerRef.collection(this.subscriptionCollection).doc(subscription.id)
+      );
+      // Keep the stored event time so a delayed older webhook can't overwrite this fresher data.
+      const [storedCustomer, ...storedSubscriptions] = await tx.getAll(
+        customerRef,
+        ...subscriptionRefs
+      );
+
       tx.set(
-        this.customerCollectionDbRef.doc(uid),
-        toFirestoreObject(customer)
+        customerRef,
+        toFirestoreObject(withStoredEventTime(customer, storedCustomer))
       );
       if (subscriptions) {
         // DS: Does this update the subscriptions for the customer's collection and also the customer object?
-        for (const subscription of subscriptions) {
+        subscriptions.forEach((subscription, i) => {
           tx.set(
-            this.customerCollectionDbRef
-              .doc(uid)
-              .collection(this.subscriptionCollection)
-              .doc(subscription.id),
-            toFirestoreObject(subscription)
+            subscriptionRefs[i],
+            toFirestoreObject(
+              withStoredEventTime(subscription, storedSubscriptions[i])
+            )
           );
-        }
+        });
       }
 
       this.statsd?.increment(
