@@ -30,7 +30,10 @@ import { useEffect, useState } from 'react';
 import { getLocalizedErrorMessage } from '../../../lib/error-utils';
 import { storeAccountData } from '../../../lib/storage-utils';
 import { sessionToken } from '../../../lib/cache';
-import { updateBasicAccountData } from '../../../lib/account-storage';
+import {
+  updateBasicAccountData,
+  updateExtendedAccountState,
+} from '../../../lib/account-storage';
 import { createRecoveryKeyWithReauth } from '../../../lib/recovery-key';
 import { getNewPasswordCredentials } from '../../../lib/crypto/password-credentials';
 import { SETTINGS_PATH } from '../../../constants';
@@ -357,12 +360,24 @@ const CompleteResetPasswordContainer = ({
 
           // we cannot create a new recovery key if the session is not verified
           if (accountResetData.sessionVerified) {
-            const recoveryKey = await createRecoveryKeyWithReauth(authClient, {
-              uid: accountResetData.uid,
-              sessionToken: accountResetData.sessionToken,
-              credentials: { password: newPassword },
-            });
-            sensitiveDataClient.NewRecoveryKeyData = { recoveryKey };
+            try {
+              const recoveryKey = await createRecoveryKeyWithReauth(
+                authClient,
+                {
+                  uid: accountResetData.uid,
+                  sessionToken: accountResetData.sessionToken,
+                  credentials: { password: newPassword },
+                }
+              );
+              sensitiveDataClient.NewRecoveryKeyData = { recoveryKey };
+              updateExtendedAccountState({
+                recoveryKey: { exists: true, estimatedSyncDeviceCount },
+              });
+            } catch {
+              // The password is already reset. Without NewRecoveryKeyData the
+              // next page skips the new-key step and continues the flow.
+              sensitiveDataClient.NewRecoveryKeyData = undefined;
+            }
           }
 
           handleNavigationWithRecoveryKey(
