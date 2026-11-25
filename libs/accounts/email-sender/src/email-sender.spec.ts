@@ -15,6 +15,7 @@ jest.mock('@sentry/node');
 import * as Sentry from '@sentry/node';
 import nodemailer from 'nodemailer';
 import type { SendMailOptions, SentMessageInfo, Transporter } from 'nodemailer';
+import { createServer, type AddressInfo, type Server } from 'net';
 
 const defaultMockEmail: Email = {
   to: 'recipient@example.com',
@@ -126,6 +127,8 @@ describe('EmailSender', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+    // A retry test replaces global.setTimeout, which the real transport needs.
+    jest.restoreAllMocks();
   });
   describe('send', () => {
     it('email successfully', async () => {
@@ -792,6 +795,145 @@ describe('EmailSender', () => {
       expect(emailSender.calculateBackoffDelay(5)).toBe(300);
 
       (Math.random as jest.Mock).mockRestore();
+    });
+  });
+
+  describe('TLS options', () => {
+    it('passes requireTLS to the transport', () => {
+      new EmailSender(
+        { ...config, requireTLS: true },
+        mockBounces,
+        mockStatsd,
+        mockLogger
+      );
+      expect(mockNodemailer.createTransport).toHaveBeenLastCalledWith(
+        expect.objectContaining({ requireTLS: true })
+      );
+    });
+
+    it('turns ignoreTLS off when requireTLS is set', () => {
+      new EmailSender(
+        { ...config, requireTLS: true, ignoreTLS: true },
+        mockBounces,
+        mockStatsd,
+        mockLogger
+      );
+      expect(mockNodemailer.createTransport).toHaveBeenLastCalledWith(
+        expect.objectContaining({ requireTLS: true, ignoreTLS: false })
+      );
+    });
+
+    it('keeps ignoreTLS without requireTLS', () => {
+      new EmailSender(
+        { ...config, requireTLS: false, ignoreTLS: true },
+        mockBounces,
+        mockStatsd,
+        mockLogger
+      );
+      expect(mockNodemailer.createTransport).toHaveBeenLastCalledWith(
+        expect.objectContaining({ requireTLS: false, ignoreTLS: true })
+      );
+    });
+  });
+
+  describe('requireTLS with a server that does not offer STARTTLS', () => {
+    // A plaintext SMTP server, as seen through an attacker that strips
+    // STARTTLS from the EHLO response: it records the commands it gets.
+    let server: Server;
+    let commands: string[];
+
+    beforeEach(async () => {
+      commands = [];
+      server = createServer((socket) => {
+        let buffer = '';
+        socket.write('220 localhost ESMTP\r\n');
+        socket.on('data', (chunk) => {
+          buffer += chunk.toString();
+          let i: number;
+          while ((i = buffer.indexOf('\r\n')) >= 0) {
+            const line = buffer.slice(0, i);
+            buffer = buffer.slice(i + 2);
+            commands.push(line);
+            const verb = line.split(' ')[0].toUpperCase();
+            if (verb === 'EHLO') {
+              socket.write('250-localhost\r\n250 AUTH PLAIN LOGIN\r\n');
+            } else if (verb === 'STARTTLS') {
+              socket.write('502 5.5.1 STARTTLS not supported\r\n');
+            } else if (verb === 'QUIT') {
+              socket.end('221 Bye\r\n');
+            } else {
+              socket.write('535 5.7.8 Authentication failed\r\n');
+            }
+          }
+        });
+        socket.on('error', () => undefined);
+      });
+      await new Promise<void>((resolve) =>
+        server.listen(0, '127.0.0.1', resolve)
+      );
+
+      const realNodemailer =
+        jest.requireActual<typeof nodemailer>('nodemailer');
+      mockNodemailer.createTransport.mockImplementation(
+        realNodemailer.createTransport
+      );
+      config = {
+        ...config,
+        host: '127.0.0.1',
+        port: (server.address() as AddressInfo).port,
+        secure: false,
+        user: 'user',
+        password: 'secret',
+        retry: { maxAttempts: 0, backOffMs: 0, jitter: 0, maxDelayMs: 0 },
+      };
+    });
+
+    afterEach(async () => {
+      await new Promise((resolve) => server.close(resolve));
+    });
+
+    it('fails before AUTH when requireTLS is set', async () => {
+      emailSender = new EmailSender(
+        { ...config, requireTLS: true },
+        mockBounces,
+        mockStatsd,
+        mockLogger
+      );
+
+      await expect(emailSender.send(defaultMockEmail, true)).rejects.toThrow();
+
+      expect(commands).toContain('STARTTLS');
+      expect(commands.some((c) => /^AUTH\b/i.test(c))).toBe(false);
+      expect(commands.some((c) => /^MAIL\b/i.test(c))).toBe(false);
+    });
+
+    it('fails before AUTH when requireTLS and ignoreTLS are both set', async () => {
+      emailSender = new EmailSender(
+        { ...config, requireTLS: true, ignoreTLS: true },
+        mockBounces,
+        mockStatsd,
+        mockLogger
+      );
+
+      await expect(emailSender.send(defaultMockEmail, true)).rejects.toThrow();
+
+      expect(commands).toContain('STARTTLS');
+      expect(commands.some((c) => /^AUTH\b/i.test(c))).toBe(false);
+      expect(commands.some((c) => /^MAIL\b/i.test(c))).toBe(false);
+    });
+
+    it('sends AUTH in plaintext without requireTLS', async () => {
+      emailSender = new EmailSender(
+        config,
+        mockBounces,
+        mockStatsd,
+        mockLogger
+      );
+
+      await expect(emailSender.send(defaultMockEmail, true)).rejects.toThrow();
+
+      expect(commands).not.toContain('STARTTLS');
+      expect(commands.some((c) => /^AUTH\b/i.test(c))).toBe(true);
     });
   });
 });

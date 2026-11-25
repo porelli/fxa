@@ -54,6 +54,39 @@ describe('lib/senders/index', () => {
       });
     }
 
+    describe('smtp TLS options', () => {
+      function transportOptions(smtp: any) {
+        return createSender({
+          ...config,
+          smtp: { ...config.smtp, ...smtp },
+        }).then(
+          (email: any) => email._ungatedMailer.mailer.transporter.options
+        );
+      }
+
+      it('passes requireTLS to the transport', async () => {
+        const options = await transportOptions({ requireTLS: true });
+        expect(options.requireTLS).toBe(true);
+      });
+
+      it('turns ignoreTLS off when requireTLS is set', async () => {
+        const options = await transportOptions({
+          requireTLS: true,
+          ignoreTLS: true,
+        });
+        expect(options.requireTLS).toBe(true);
+        expect(options.ignoreTLS).toBe(false);
+      });
+
+      it('keeps ignoreTLS without requireTLS', async () => {
+        const options = await transportOptions({
+          requireTLS: false,
+          ignoreTLS: true,
+        });
+        expect(options.ignoreTLS).toBe(true);
+      });
+    });
+
     describe('.sendVerifyEmail()', () => {
       const code = crypto.randomBytes(32);
 

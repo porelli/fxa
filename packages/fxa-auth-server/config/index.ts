@@ -449,6 +449,12 @@ const convictConf = convict({
       default: false,
       env: 'SMTP_IGNORE_TLS',
     },
+    requireTLS: {
+      doc: 'Always use STARTTLS before AUTH and sending, even if the server does not advertise it: if STARTTLS fails, the send fails. Overrides ignoreTLS. No effect when secure is true (TLS from the start)',
+      format: Boolean,
+      default: false,
+      env: 'SMTP_REQUIRE_TLS',
+    },
     user: {
       doc: 'SMTP username',
       format: String,

@@ -164,6 +164,12 @@ export class EmailSender {
       options.requireTLS = config.requireTLS;
     }
 
+    // Required STARTTLS is never skipped, whatever ignoreTLS says (the admin
+    // server defaults ignoreTLS to true).
+    if (options.requireTLS) {
+      options.ignoreTLS = false;
+    }
+
     this.emailClient = nodemailer.createTransport(options);
   }
 

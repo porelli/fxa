@@ -192,6 +192,43 @@ describe('Config', () => {
     });
   });
 
+  describe('smtp.requireTLS', () => {
+    let originalEnv: Record<string, string | undefined>;
+
+    function mockEnv(key: string, value: string) {
+      originalEnv[key] = process.env[key];
+      process.env[key] = value;
+    }
+
+    beforeEach(() => {
+      originalEnv = {};
+      jest.resetModules();
+      mockEnv('NODE_ENV', 'dev');
+    });
+
+    afterEach(() => {
+      for (const key in originalEnv) {
+        if (originalEnv[key] === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = originalEnv[key];
+        }
+      }
+    });
+
+    it('defaults to false', () => {
+      const { config } = require('./index');
+      expect(config.get('smtp.requireTLS')).toBe(false);
+    });
+
+    it('is set by SMTP_REQUIRE_TLS', () => {
+      mockEnv('SMTP_REQUIRE_TLS', 'true');
+      const { config } = require('./index');
+      expect(config.get('smtp.requireTLS')).toBe(true);
+      expect(config.getProperties().smtp.requireTLS).toBe(true);
+    });
+  });
+
   describe('rate limit rules', () => {
     // The shipped rules file is otherwise only parsed at server boot, so a typo
     // here surfaces as a deploy-time crash rather than a failing test.

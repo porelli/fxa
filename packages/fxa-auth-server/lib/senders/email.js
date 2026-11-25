@@ -321,6 +321,11 @@ module.exports = function (log, config, bounces, statsd) {
       options.requireTLS = mailerConfig.requireTLS;
     }
 
+    // Required STARTTLS is never skipped, whatever ignoreTLS says.
+    if (options.requireTLS) {
+      options.ignoreTLS = false;
+    }
+
     this.accountSettingsUrl = mailerConfig.accountSettingsUrl;
     this.accountRecoveryCodesUrl = mailerConfig.accountRecoveryCodesUrl;
     this.androidUrl = mailerConfig.androidUrl;

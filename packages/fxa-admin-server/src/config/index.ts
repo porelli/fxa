@@ -806,6 +806,12 @@ const conf = convict({
       default: true,
       env: 'SMTP__IGNORE_TLS',
     },
+    requireTLS: {
+      doc: 'Always use STARTTLS before AUTH and sending, even if the server does not advertise it: if STARTTLS fails, the send fails. Overrides ignoreTLS (true by default here). No effect when secure is true (TLS from the start)',
+      format: Boolean,
+      default: false,
+      env: 'SMTP_REQUIRE_TLS',
+    },
     sendingRate: {
       doc: 'How fast we can send emails',
       default: 5,
